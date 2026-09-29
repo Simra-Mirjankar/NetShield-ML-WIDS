@@ -11,12 +11,6 @@ const sidebarItems = [
   'Settings',
 ]
 
-const dashboardCards = [
-  ['Security Score', '--'],
-  ['Active Threats', '--'],
-  ['Networks Found', '--'],
-  ['Packets Analyzed', '--'],
-]
 
 const API_BASE_URL = 'http://127.0.0.1:5000/api'
 const ACTIVE_SCANNER_STATES = ['starting', 'running', 'stopping']
@@ -208,6 +202,33 @@ function App() {
   }
 
   useEffect(() => {
+    if (activeView !== 'Dashboard') {
+      return
+    }
+
+    const controller = new AbortController()
+
+    const loadDashboardData = async () => {
+      try {
+        await Promise.all([
+          loadInterfaces(controller.signal),
+          loadNetworks(controller.signal),
+          loadCaptureStatus(controller.signal),
+          loadPackets(controller.signal),
+        ])
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          return
+        }
+      }
+    }
+
+    loadDashboardData()
+
+    return () => controller.abort()
+  }, [activeView])
+
+  useEffect(() => {
     if (activeView !== 'WiFi Scan') {
       return
     }
@@ -390,7 +411,7 @@ function App() {
   }, [activeView])
 
   useEffect(() => {
-    if (activeView !== 'ML Detection') {
+    if (activeView !== 'ML Detection' && activeView !== 'Dashboard') {
       return
     }
 
@@ -425,7 +446,7 @@ function App() {
   }, [activeView])
 
   useEffect(() => {
-    if (activeView !== 'ML Detection') {
+    if (activeView !== 'ML Detection' && activeView !== 'Dashboard') {
       return
     }
 
@@ -459,7 +480,7 @@ function App() {
   }, [activeView])
 
   useEffect(() => {
-    if (activeView !== 'Incidents') {
+    if (activeView !== 'Incidents' && activeView !== 'Dashboard') {
       return
     }
 
@@ -491,6 +512,33 @@ function App() {
     loadIncidentsData()
 
     return () => controller.abort()
+  }, [activeView])
+
+  useEffect(() => {
+    if (activeView !== 'Incidents' && activeView !== 'Dashboard') {
+      return
+    }
+
+    let activePollController = null
+
+    const pollIncidents = () => {
+      activePollController?.abort()
+      activePollController = new AbortController()
+      const controller = activePollController
+
+      fetchJson('/incidents', { signal: controller.signal })
+        .then((payload) => {
+          setIncidents(normalizeList(payload, 'incidents'))
+        })
+        .catch(() => {})
+    }
+
+    const intervalId = setInterval(pollIncidents, 2000)
+
+    return () => {
+      activePollController?.abort()
+      clearInterval(intervalId)
+    }
   }, [activeView])
 
   const wirelessAdapter =
@@ -538,6 +586,23 @@ function App() {
   const highSeverityIncidents = incidents.filter(
     (incident) => String(incident?.severity ?? '').toLowerCase() === 'high',
   ).length
+
+  const dashboardCards = [
+    ['Security Score', '--'],
+    ['Active Threats', totalIncidents],
+    ['Networks Found', networks.length],
+    ['Packets Analyzed', getValue(captureProgress, ['packet_count']) ?? packets.length],
+  ]
+
+  const monitoringStatus =
+    getValue(captureStatus, ['state', 'capture_state', 'status']) ??
+    (captureState === 'stopped' ? 'Stopped' : captureState)
+  const monitoringNetwork =
+    getValue(captureProgress, ['network', 'ssid']) ?? 'None'
+  const monitoringInterface =
+    getValue(captureStatus, ['interface', 'interface_name']) ??
+    getValue(captureProgress, ['interface']) ??
+    (selectedCaptureInterface || 'Not Selected')
 
   const handleStartScan = async () => {
     if (startScanDisabled) {
@@ -678,22 +743,51 @@ function App() {
                   <dl className="status-list">
                     <div>
                       <dt>Status</dt>
-                      <dd>Not Started</dd>
+                      <dd>{formatValue(monitoringStatus)}</dd>
                     </div>
                     <div>
                       <dt>Network</dt>
-                      <dd>None Selected</dd>
+                      <dd>{formatValue(monitoringNetwork)}</dd>
                     </div>
                     <div>
                       <dt>Interface</dt>
-                      <dd>Not Selected</dd>
+                      <dd>{formatValue(monitoringInterface)}</dd>
                     </div>
                   </dl>
                 </section>
 
                 <section className="panel">
                   <h2>Latest Detection</h2>
-                  <p className="empty-state">No traffic has been analyzed yet.</p>
+                  {mlLiveStatus && mlLiveStatus.status !== 'no_inference' && mlLiveStatus.prediction !== undefined ? (
+                    <dl className="status-list">
+                      <div>
+                        <dt>Label</dt>
+                        <dd>{formatValue(mlLiveStatus.label)}</dd>
+                      </div>
+                      <div>
+                        <dt>Prediction</dt>
+                        <dd>{formatValue(mlLiveStatus.prediction)}</dd>
+                      </div>
+                      <div>
+                        <dt>Attack Probability</dt>
+                        <dd>{formatProbability(mlLiveStatus.attack_probability)}</dd>
+                      </div>
+                      <div>
+                        <dt>Normal Probability</dt>
+                        <dd>{formatProbability(mlLiveStatus.normal_probability)}</dd>
+                      </div>
+                      <div>
+                        <dt>Total Packets</dt>
+                        <dd>{formatValue(mlLiveStatus.total_packets)}</dd>
+                      </div>
+                      <div>
+                        <dt>Feature Count</dt>
+                        <dd>{formatValue(mlLiveStatus.feature_count)}</dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <p className="empty-state">No traffic has been analyzed yet.</p>
+                  )}
                 </section>
               </div>
             </section>
