@@ -135,6 +135,9 @@ function App() {
   const [incidents, setIncidents] = useState([])
   const [incidentsLoading, setIncidentsLoading] = useState(false)
   const [incidentsError, setIncidentsError] = useState('')
+  const [reportIncidents, setReportIncidents] = useState([])
+  const [reportsLoading, setReportsLoading] = useState(false)
+  const [reportsError, setReportsError] = useState('')
 
   const fetchJson = async (path, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${path}`, options)
@@ -541,6 +544,40 @@ function App() {
     }
   }, [activeView])
 
+  const loadReportsData = async (signal) => {
+    setReportsLoading(true)
+    setReportsError('')
+
+    try {
+      const payload = await fetchJson('/incidents', { signal })
+      setReportIncidents(normalizeList(payload, 'incidents'))
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return
+      }
+
+      setReportIncidents([])
+      setReportsError(
+        'Unable to connect to the NetShield backend at http://127.0.0.1:5000. Start the Flask server and try again.',
+      )
+    } finally {
+      if (!signal?.aborted) {
+        setReportsLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (activeView !== 'Reports') {
+      return
+    }
+
+    const controller = new AbortController()
+    loadReportsData(controller.signal)
+
+    return () => controller.abort()
+  }, [activeView])
+
   const wirelessAdapter =
     interfaces.find((adapter) => getInterfaceName(adapter) === selectedInterfaceName) ?? interfaces[0] ?? null
   const selectedInterface = getInterfaceName(wirelessAdapter)
@@ -603,6 +640,88 @@ function App() {
     getValue(captureStatus, ['interface', 'interface_name']) ??
     getValue(captureProgress, ['interface']) ??
     (selectedCaptureInterface || 'Not Selected')
+
+  const reportTotalIncidents = reportIncidents.length
+  const reportHighSeverity = reportIncidents.filter(
+    (incident) => String(incident?.severity ?? '').toLowerCase() === 'high',
+  ).length
+  const reportTotalPackets = reportIncidents.reduce((sum, inc) => {
+    const val = Number(inc?.total_packets)
+    return Number.isFinite(val) ? sum + val : sum
+  }, 0)
+  const reportAvgAttackProb =
+    reportIncidents.length > 0
+      ? reportIncidents.reduce((sum, inc) => {
+          const val = Number(inc?.attack_probability)
+          return Number.isFinite(val) ? sum + val : sum
+        }, 0) / reportIncidents.length
+      : null
+
+  const attackCountsByLabel = reportIncidents.reduce((acc, inc) => {
+    const label = String(inc?.label ?? (inc?.prediction !== undefined ? `Class ${inc.prediction}` : 'Unknown'))
+    acc[label] = (acc[label] || 0) + 1
+    return acc
+  }, {})
+
+  const handleRefreshReports = () => {
+    loadReportsData()
+  }
+
+  const handleExportCsv = () => {
+    if (!reportIncidents || reportIncidents.length === 0) {
+      return
+    }
+
+    const headers = [
+      'ID',
+      'Created At',
+      'Label',
+      'Attack Probability',
+      'Normal Probability',
+      'Total Packets',
+      'Window Start',
+      'Window End',
+      'Feature Count',
+      'Severity',
+      'Status',
+    ]
+
+    const formatCsvField = (val) => {
+      if (val === undefined || val === null) {
+        return ''
+      }
+      const str = String(val)
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return `"${str.replace(/"/g, '""')}"`
+      }
+      return str
+    }
+
+    const rows = reportIncidents.map((incident) => [
+      formatCsvField(incident.id),
+      formatCsvField(incident.created_at),
+      formatCsvField(incident.label ?? (incident.prediction !== undefined ? `Class ${incident.prediction}` : '')),
+      formatCsvField(incident.attack_probability),
+      formatCsvField(incident.normal_probability),
+      formatCsvField(incident.total_packets),
+      formatCsvField(incident.window_start),
+      formatCsvField(incident.window_end),
+      formatCsvField(incident.feature_count),
+      formatCsvField(incident.severity),
+      formatCsvField(incident.status),
+    ])
+
+    const csvContent = [headers.join(','), ...rows.map((row) => row.join(','))].join('\r\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `netshield_incident_report_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
 
   const handleStartScan = async () => {
     if (startScanDisabled) {
@@ -1276,6 +1395,138 @@ function App() {
                   <div className="empty-state">
                     <p>No incidents detected</p>
                     <p>Incidents created by ML attack detections will appear here.</p>
+                  </div>
+                )}
+              </section>
+            </section>
+          ) : activeView === 'Reports' ? (
+            <section className="reports-view" aria-label="Security reports">
+              {reportsError ? <p className="error-banner">{reportsError}</p> : null}
+
+              <div className="reports-header-panel panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Security Reports</h2>
+                    <p className="panel-subtitle">
+                      Incident telemetry and analytical summary generated from real-time ML intrusion detections.
+                    </p>
+                  </div>
+                  <div className="report-controls">
+                    <button
+                      className="scan-button"
+                      disabled={reportsLoading}
+                      onClick={handleRefreshReports}
+                      type="button"
+                    >
+                      {reportsLoading ? 'Refreshing...' : 'Refresh Reports'}
+                    </button>
+                    <button
+                      className="scan-button"
+                      disabled={reportsLoading || reportIncidents.length === 0}
+                      onClick={handleExportCsv}
+                      type="button"
+                    >
+                      Export CSV
+                    </button>
+                    <button
+                      className="scan-button primary"
+                      disabled={reportsLoading}
+                      onClick={() => window.print()}
+                      type="button"
+                    >
+                      Print / Save PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="metric-grid">
+                <article className="metric-card">
+                  <p>Total Incidents</p>
+                  <strong>{reportTotalIncidents}</strong>
+                </article>
+                <article className="metric-card">
+                  <p>High Severity</p>
+                  <strong>{reportHighSeverity}</strong>
+                </article>
+                <article className="metric-card">
+                  <p>Packets in Incidents</p>
+                  <strong>{reportTotalPackets}</strong>
+                </article>
+                <article className="metric-card">
+                  <p>Average Attack Probability</p>
+                  <strong>{reportAvgAttackProb !== null ? formatProbability(reportAvgAttackProb) : '--'}</strong>
+                </article>
+              </div>
+
+              <section className="panel attack-summary-panel">
+                <div className="panel-header">
+                  <h2>Attack Summary</h2>
+                </div>
+                {Object.keys(attackCountsByLabel).length > 0 ? (
+                  <div className="attack-summary-grid">
+                    {Object.entries(attackCountsByLabel).map(([label, count]) => (
+                      <div className="attack-summary-item" key={label}>
+                        <span className="badge badge-detection">{label}</span>
+                        <span className="attack-count">{count} {count === 1 ? 'incident' : 'incidents'}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="empty-state-muted">No attacks recorded yet.</p>
+                )}
+              </section>
+
+              <section className="panel incidents-report-panel">
+                <div className="panel-header">
+                  <h2>Incident Report</h2>
+                </div>
+                {reportsLoading ? (
+                  <p className="muted-text">Loading reports data...</p>
+                ) : reportIncidents.length > 0 ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Date/Time</th>
+                          <th>Attack Label</th>
+                          <th>Attack Probability</th>
+                          <th>Packets</th>
+                          <th>Severity</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportIncidents.map((incident, index) => (
+                          <tr key={getValue(incident, ['id']) ?? index}>
+                            <td>{formatValue(incident.id)}</td>
+                            <td>{formatDateTime(incident.created_at)}</td>
+                            <td>
+                              <span className="badge badge-detection">
+                                {formatValue(incident.label ?? incident.prediction)}
+                              </span>
+                            </td>
+                            <td>{formatProbability(incident.attack_probability)}</td>
+                            <td>{formatValue(incident.total_packets)}</td>
+                            <td>
+                              <span className={getSeverityBadgeClass(incident.severity)}>
+                                {formatValue(incident.severity)}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={getStatusBadgeClass(incident.status)}>
+                                {formatValue(incident.status)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <p>No security incidents recorded yet. Reports will populate when the ML detector identifies an attack.</p>
                   </div>
                 )}
               </section>

@@ -651,6 +651,79 @@ tbody tr:last-child td {
   color: var(--text);
 }
 
+.reports-view {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.reports-header-panel {
+  flex: 0 0 auto;
+}
+
+.report-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panel-subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.attack-summary-panel {
+  flex: 0 0 auto;
+}
+
+.attack-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.attack-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 8px 14px;
+}
+
+.attack-count {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.empty-state-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 12px 0 4px;
+}
+
+.incidents-report-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.incidents-report-panel .table-wrap {
+  margin-top: 14px;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     width: 210px;
@@ -670,6 +743,11 @@ tbody tr:last-child td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .reports-header-panel .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .panel-grid {
     grid-template-columns: 1fr;
   }
@@ -685,5 +763,81 @@ tbody tr:last-child td {
   .capture-control-list,
   .capture-stats-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .sidebar,
+  .top-header,
+  .report-controls,
+  .scan-actions,
+  .scan-button,
+  button {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .content-area,
+  .main-content,
+  .reports-view {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .panel,
+  .metric-card {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    margin-bottom: 16px !important;
+  }
+
+  .metric-card strong,
+  .metric-card p,
+  .panel h2,
+  .panel-subtitle,
+  dt,
+  dd,
+  th,
+  td,
+  .attack-count {
+    color: #0f172a !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th,
+  td {
+    border: 1px solid #e2e8f0 !important;
+    padding: 8px !important;
+    color: #0f172a !important;
+  }
+
+  th {
+    background: #f1f5f9 !important;
+  }
+
+  .badge {
+    border: 1px solid #94a3b8 !important;
+    color: #0f172a !important;
+    background: transparent !important;
   }
 }
