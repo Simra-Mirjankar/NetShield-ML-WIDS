@@ -138,6 +138,30 @@ function App() {
   const [reportIncidents, setReportIncidents] = useState([])
   const [reportsLoading, setReportsLoading] = useState(false)
   const [reportsError, setReportsError] = useState('')
+  const [selectedAp, setSelectedAp] = useState(null)
+  const [apAssessment, setApAssessment] = useState(null)
+  const [apAssessmentLoading, setApAssessmentLoading] = useState(false)
+  const [apAssessmentError, setApAssessmentError] = useState('')
+
+  const handleAssessAp = async (network) => {
+    const bssid = getValue(network, ['bssid', 'BSSID'])
+    if (!bssid) return
+
+    setSelectedAp(network)
+    setApAssessment(null)
+    setApAssessmentLoading(true)
+    setApAssessmentError('')
+
+    try {
+      const data = await fetchJson(`/networks/assess?bssid=${encodeURIComponent(bssid)}`)
+      setApAssessment(data)
+    } catch {
+      setApAssessmentError('Unable to perform ML assessment for this AP. Check backend connection.')
+    } finally {
+      setApAssessmentLoading(false)
+    }
+  }
+
 
   const fetchJson = async (path, options = {}) => {
     const response = await fetch(`${API_BASE_URL}${path}`, options)
@@ -1036,6 +1060,7 @@ function App() {
                           <th>Signal</th>
                           <th>Security</th>
                           <th>Analysis Status</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1048,13 +1073,19 @@ function App() {
                             <td>{formatValue(getValue(network, ['signal', 'Signal']))}</td>
                             <td>{formatValue(getValue(network, ['encryption']))}</td>
                             <td>
-                              {formatValue(
-                                getValue(network, [
-                                  'analysis_status',
-                                  'analysisStatus',
-                                  'Analysis Status',
-                                ]),
-                              )}
+                              <span className={network.analysis_status === 'READY_FOR_ASSESSMENT' ? 'badge badge-status-new' : 'badge badge-default'}>
+                                {formatValue(network.analysis_status)}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                className="scan-button primary"
+                                style={{ padding: '0.3rem 0.65rem', fontSize: '0.8rem' }}
+                                onClick={() => handleAssessAp(network)}
+                                type="button"
+                              >
+                                ML Assessment
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1065,6 +1096,117 @@ function App() {
                   <p className="empty-state">No scanned networks are available.</p>
                 )}
               </section>
+
+              {apAssessmentLoading ? (
+                <section className="panel">
+                  <p className="muted-text">
+                    Performing V3 31-feature Random Forest ML assessment for {selectedAp?.ssid || selectedAp?.bssid}...
+                  </p>
+                </section>
+              ) : apAssessmentError ? (
+                <section className="panel">
+                  <p className="error-banner">{apAssessmentError}</p>
+                </section>
+              ) : apAssessment ? (
+                apAssessment.available ? (
+                  <section
+                    className="panel assessment-panel"
+                    style={{
+                      borderLeft: apAssessment.prediction === 1 ? '4px solid #ef4444' : '4px solid #10b981',
+                      marginTop: '1rem',
+                    }}
+                  >
+                    <div className="panel-header">
+                      <div>
+                        <h2>ML Security Assessment</h2>
+                        <p className="panel-subtitle">
+                          BSSID: <code>{apAssessment.bssid}</code> {selectedAp?.ssid ? `(${selectedAp.ssid})` : ''}
+                        </p>
+                      </div>
+                      <span
+                        className={apAssessment.prediction === 1 ? 'badge badge-severity-high' : 'badge badge-status-resolved'}
+                        style={{ fontSize: '1rem', padding: '0.4rem 0.8rem' }}
+                      >
+                        {apAssessment.label} {apAssessment.attack_category ? `- ${apAssessment.attack_category}` : ''}
+                      </span>
+                    </div>
+
+                    <div className="metric-grid" style={{ marginTop: '1rem' }}>
+                      <article className="metric-card">
+                        <p>Prediction</p>
+                        <strong>{apAssessment.label} ({apAssessment.prediction})</strong>
+                      </article>
+                      <article className="metric-card">
+                        <p>Attack Probability</p>
+                        <strong style={{ color: apAssessment.attack_probability > 0.5 ? '#ef4444' : '#10b981' }}>
+                          {formatProbability(apAssessment.attack_probability)}
+                        </strong>
+                      </article>
+                      <article className="metric-card">
+                        <p>Normal Probability</p>
+                        <strong>{formatProbability(apAssessment.normal_probability)}</strong>
+                      </article>
+                      <article className="metric-card">
+                        <p>Packets Analyzed</p>
+                        <strong>{apAssessment.total_packets}</strong>
+                      </article>
+                    </div>
+
+                    <dl className="status-list" style={{ marginTop: '1rem' }}>
+                      <div>
+                        <dt>Feature Count</dt>
+                        <dd>{apAssessment.feature_count} Features (V3 Schema Verified)</dd>
+                      </div>
+                      <div>
+                        <dt>Observation Window</dt>
+                        <dd>{apAssessment.window_duration} Seconds</dd>
+                      </div>
+                      <div>
+                        <dt>Total AP Observations</dt>
+                        <dd>{apAssessment.total_ap_packets} Packets</dd>
+                      </div>
+                      <div>
+                        <dt>Assessment Time</dt>
+                        <dd>{apAssessment.timestamp}</dd>
+                      </div>
+                    </dl>
+                    <p className="muted-text" style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
+                      {apAssessment.message}
+                    </p>
+                  </section>
+                ) : (
+                  <section
+                    className="panel assessment-panel-unavailable"
+                    style={{ borderLeft: '4px solid #f59e0b', marginTop: '1rem' }}
+                  >
+                    <div className="panel-header">
+                      <div>
+                        <h2 style={{ color: '#f59e0b' }}>ML Assessment Unavailable</h2>
+                        <p className="panel-subtitle">BSSID: <code>{apAssessment.bssid}</code></p>
+                      </div>
+                      <span className="badge badge-severity-medium">Insufficient Data</span>
+                    </div>
+
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <p style={{ fontWeight: 600, color: '#f59e0b', marginBottom: '0.25rem' }}>
+                        Reason: {apAssessment.reason}
+                      </p>
+                      <p className="muted-text">{apAssessment.details}</p>
+                    </div>
+
+                    <div style={{ marginTop: '1rem' }}>
+                      <button
+                        className="scan-button primary"
+                        onClick={() => setActiveView('Live Monitor')}
+                        type="button"
+                      >
+                        Start Packet Observation
+                      </button>
+                    </div>
+                  </section>
+                )
+              ) : null}
+
             </section>
           ) : activeView === 'Live Monitor' ? (
             <section className="live-monitor-view" aria-label="Live packet monitor">

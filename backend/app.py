@@ -49,6 +49,9 @@ def interfaces():
     return jsonify(read_adapter_status())
 
 
+from ml.ap_assessment import assess_ap_security
+
+
 @app.get("/api/networks")
 def networks():
     network_rows = read_networks()
@@ -59,6 +62,26 @@ def networks():
             "networks": network_rows,
         }
     )
+
+
+@app.route("/api/networks/assess", methods=["GET", "POST"])
+def assess_network():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        bssid = data.get("bssid") or request.args.get("bssid")
+    else:
+        bssid = request.args.get("bssid")
+
+    if not bssid:
+        return (
+            jsonify(
+                {"error": "Query parameter or JSON field 'bssid' is required."}
+            ),
+            400,
+        )
+
+    result = assess_ap_security(bssid, inference_service=ml_service)
+    return jsonify(result)
 
 
 
