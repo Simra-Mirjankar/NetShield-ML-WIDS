@@ -37,3 +37,13 @@ backend/ml/data/processed/
 
 # Generated AWID3 preprocessing/training data
 backend/data/*.csv
+
+# Local database
+backend/data/*.db
+
+# Backup files
+*.bak
+*.bak_*
+
+# Generated ML models
+backend/ml/models/
